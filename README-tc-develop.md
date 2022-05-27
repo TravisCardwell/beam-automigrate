@@ -99,3 +99,28 @@ Migrations created by `beam-automigrate` work in simple cases, but even then
 adding and dropping constraints is not production-friendly.  Moreover, the
 migrations are incorrect in non-simple cases since `beam-automigrate` does not
 handle name collisions and naively orders migration steps.
+
+## Foreign key constraints with nullable references
+
+* **Severity**: Critical (prevents modeling real-world databases)
+* **Compatibility**: Non-Breaking (new API functions)
+* **Status**: Pending
+* **Commit**: [`94043de3`](https://github.com/TravisCardwell/beam-automigrate/commit/94043de3babdad706d61ddc4b4134eb0f9a91ca2)
+* **Issue**: [#40](https://github.com/obsidiansystems/beam-automigrate/issues/40)
+* **Pull request**: Pending
+
+### Problem
+
+The current API does not provide a way to annotate a table with a foreign key
+constraint when the column is nullable.  This type of constraint is very
+common, as it used for optional one-to-one relations (often marked as `?` or
+`0|1` in database software).
+
+### Solution
+
+I implemented new functions `nullableForeignKeyOnPk` and
+`nullableForeignKeyOn` to support this.
+
+### Migration
+
+No migration is required.
