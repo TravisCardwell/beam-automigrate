@@ -16,7 +16,7 @@ in a future release.
 * **Severity**: Critical (prevents modeling real-world databases)
 * **Compatibility**: Non-Breaking (only previously broken behavior changes)
 * **Status**: Merged into `develop`
-* **Commit**: [`0715cd4`](https://github.com/obsidiansystems/beam-automigrate/commit/0715cd42cfcdef67e5fd27579916c189c46f9390)
+* **Commit**: [`0715cd42`](https://github.com/obsidiansystems/beam-automigrate/commit/0715cd42cfcdef67e5fd27579916c189c46f9390)
 * **Issue**: [#36](https://github.com/obsidiansystems/beam-automigrate/issues/36)
 * **Pull request**: [#37](https://github.com/obsidiansystems/beam-automigrate/pull/37)
 
@@ -24,15 +24,13 @@ in a future release.
 
 When loading a `Schema` from PostgreSQL, foreign key constraints are
 discovered by referencing the `information_schema` tables using the query
-defined in [`foreignKeysQ`][].  The ordering of the columns in the foreign
-table must match the ordering of the columns in the primary table.  The query
-does not specify the order, however, resulting in incorrect `ForeignKey`s when
-the returned order does not happen to match the correct order.  Since the
-order of `ForeignKey` column pairs is determined by `Set.toList`, it often
-does not match the order of columns in composite primary keys, which makes
-hitting this bug pretty likely when using composite keys.
-
-[`foreignKeysQ`]: <https://github.com/obsidiansystems/beam-automigrate/blob/8144bc7f8bbd0ac043b5abb0b1000e369ae8c776/src/Database/Beam/AutoMigrate/Postgres.hs#L146>
+defined in `foreignKeysQ`.  The ordering of the columns in the foreign table
+must match the ordering of the columns in the primary table.  The query does
+not specify the order, however, resulting in incorrect `ForeignKey`s when the
+returned order does not happen to match the correct order.  Since the order of
+`ForeignKey` column pairs is determined by `Set.toList`, it often does not
+match the order of columns in composite primary keys, which makes hitting this
+bug pretty likely when using composite keys.
 
 ### Solution
 
@@ -41,3 +39,59 @@ The query is changed to specify the order within the aggregate functions.
 ### Migration
 
 No migration is required.
+
+## Annotated foreign key constraint names not unique
+
+* **Severity**: Critical (prevents modeling real-world databases)
+* **Compatibility**: Breaking
+* **Status**: Pending
+* **Commit**: [`2f197aab`](https://github.com/TravisCardwell/beam-automigrate/commit/2f197aab5f3fabee9646410b77eb923ff0bfbc89)
+* **Issue**: [#38](https://github.com/obsidiansystems/beam-automigrate/issues/38)
+* **Pull request**: [#39](https://github.com/obsidiansystems/beam-automigrate/pull/39)
+
+### Problem
+
+When annotating foreign key constraints using `foreignKeyOnPk` or
+`foreignKeyOn`, constraint names are automatically created based on the table
+and columns of the *referenced* unique constraint.  The name is not
+necessarily unique because many tables may have foreign key constraints that
+reference the same unique constraint.  The constraint name clashes prevent
+`beam-automigrate` from being able to model non-trivial databases.
+
+### Solution
+
+The above functions are changed so that constraint names are based on the
+table and columns of the foreign key constraint.  This provides unique
+constraint names in *normal* usage.
+
+It is not normal to specify more than one foreign key constraint on the same
+columns, though it is conceivable in a database with "is-a" relationships
+where multiple tables share the same primary keys.  This fix does *not* help
+with this case.  If we want to provide a solution for this case, we should
+provide an additional function that allows the developer to specify the
+constraint name.  (With "is-a" relationships, one normally creates a hierarchy
+of foreign key constraints, so there are no constraints on the same columns.)
+
+Note that this solution does not fix the `GTableConstraintColumns` instance
+that is used in the implementation of automatic foreign key discovery and has
+multiple issues.  I planned on working on this separately, but perhaps I
+should look into it now...  (Due to many issues, I currently completely
+disable automatic foreign key discovery.)
+
+### Migration
+
+When annotating foreign key constraints, all foreign key constraint names
+change.  In a production PostgreSQL database where performance is a
+consideration, constraints should be renamed using `RENAME CONSTRAINT`
+commands.  Note that this command is only available in PostgreSQL 9.2 or
+newer.  The developer must order the commands so that there are no conflicts.
+Conflicts are likely because of the very problem that this fix resolves.
+
+```sql
+ALTER TABLE name RENAME CONSTRAINT old_name TO new_name;
+```
+
+Migrations created by `beam-automigrate` work in simple cases, but even then
+adding and dropping constraints is not production-friendly.  Moreover, the
+migrations are incorrect in non-simple cases since `beam-automigrate` does not
+handle name collisions and naively orders migration steps.
