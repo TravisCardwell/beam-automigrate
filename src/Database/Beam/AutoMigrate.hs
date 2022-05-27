@@ -77,6 +77,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import qualified Data.Text.Lazy as LT
+import qualified Data.Vector as V
 import Database.Beam (MonadBeam)
 import Database.Beam.AutoMigrate.Annotated as Exports
 import Database.Beam.AutoMigrate.Compat as Exports
@@ -424,14 +425,14 @@ toSqlSyntax e =
       Unique fname cols ->
         conKeyword <> sqlEscaped fname
           <> " UNIQUE ("
-          <> T.intercalate ", " (map (sqlEscaped . columnName) (S.toList cols))
+          <> T.intercalate ", " (map (sqlEscaped . columnName) (V.toList cols))
           <> ")"
       PrimaryKey fname cols ->
         conKeyword <> sqlEscaped fname
           <> " PRIMARY KEY ("
-          <> T.intercalate ", " (map (sqlEscaped . columnName) (S.toList cols))
+          <> T.intercalate ", " (map (sqlEscaped . columnName) (V.toList cols))
           <> ")"
-      ForeignKey fname (tableName -> tName) (S.toList -> colPair) onDelete onUpdate ->
+      ForeignKey fname (tableName -> tName) (V.toList -> colPair) onDelete onUpdate ->
         let (fkCols, referenced) =
               ( map (sqlEscaped . columnName . fst) colPair,
                 map (sqlEscaped . columnName . snd) colPair

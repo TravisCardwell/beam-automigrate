@@ -28,6 +28,7 @@ import qualified Data.Map.Strict as M
 import Data.Monoid
 import qualified Data.Set as S
 import Data.Text (Text)
+import qualified Data.Vector as V
 import Database.Beam.AutoMigrate.Diff
 import Database.Beam.AutoMigrate.Types
 
@@ -129,25 +130,27 @@ validateSchemaTables s = forM_ (M.toList $ schemaTables s) validateTable
 -- 4. For a 'ForeignKey', the referenced columns must all be UNIQUE or PRIMARY keys.
 validateTableConstraint :: Schema -> TableName -> Table -> TableConstraint -> Either ValidationFailed ()
 validateTableConstraint s tName tbl c = case c of
-  PrimaryKey _ cols | cols `S.isSubsetOf` allTblColumns -> Right ()
-  PrimaryKey _ cols ->
-    Left $ InvalidTableConstraint c (NotAllColumnsExist tName (S.difference cols allTblColumns) allTblColumns)
+  PrimaryKey _ colsV -> case S.fromList (V.toList colsV) of
+    cols
+      | cols `S.isSubsetOf` allTblColumns -> Right ()
+      | otherwise -> Left $ InvalidTableConstraint c (NotAllColumnsExist tName (S.difference cols allTblColumns) allTblColumns)
   ForeignKey _ referencedTable columnPairs _ _ -> checkFkIntegrity referencedTable columnPairs
-  Unique _ cols | cols `S.isSubsetOf` allTblColumns -> Right ()
-  Unique _ cols ->
-    Left $ InvalidTableConstraint c (NotAllColumnsExist tName (S.difference cols allTblColumns) allTblColumns)
+  Unique _ colsV -> case S.fromList (V.toList colsV) of
+    cols
+      | cols `S.isSubsetOf` allTblColumns -> Right ()
+      | otherwise -> Left $ InvalidTableConstraint c (NotAllColumnsExist tName (S.difference cols allTblColumns) allTblColumns)
   where
     allTblColumns :: S.Set ColumnName
     allTblColumns = M.keysSet . tableColumns $ tbl
 
-    checkFkIntegrity :: TableName -> S.Set (ColumnName, ColumnName) -> Either ValidationFailed ()
+    checkFkIntegrity :: TableName -> V.Vector (ColumnName, ColumnName) -> Either ValidationFailed ()
     checkFkIntegrity referencedTable columnPairs = runExcept $
       liftEither $
         case M.lookup referencedTable (schemaTables s) of
           Nothing -> throwError $ InvalidTableConstraint c (TableDoesntExist referencedTable)
           Just extTbl -> do
             let allExtColumns = M.keysSet (tableColumns extTbl)
-            let (localCols, referencedCols) = (S.map fst columnPairs, S.map snd columnPairs)
+            let (localCols, referencedCols) = bimap S.fromList S.fromList . unzip $ V.toList columnPairs
             if
                 | not (localCols `S.isSubsetOf` allTblColumns) ->
                   throwError $ InvalidTableConstraint c (NotAllColumnsExist tName (S.difference localCols allTblColumns) allTblColumns)
@@ -160,10 +163,14 @@ validateTableConstraint s tName tbl c = case c of
     checkColumnsIntegrity extName extTbl referencedCols =
       let checkConstraint extCon = case extCon of
             ForeignKey {} -> Nothing
-            PrimaryKey _ cols | referencedCols `S.isSubsetOf` cols -> Just ()
-            PrimaryKey {} -> Nothing
-            Unique _ cols | referencedCols `S.isSubsetOf` cols -> Just ()
-            Unique {} -> Nothing
+            PrimaryKey _ colsV -> case S.fromList (V.toList colsV) of
+              cols
+                | referencedCols `S.isSubsetOf` cols -> Just ()
+                | otherwise -> Nothing
+            Unique _ colsV -> case S.fromList (V.toList colsV) of
+              cols
+                | referencedCols `S.isSubsetOf` cols -> Just ()
+                | otherwise -> Nothing
        in case asum (map checkConstraint (S.toList $ tableConstraints extTbl)) of
             Nothing ->
               let reason = ColumnsInFkAreNotUniqueOrPrimaryKeyFields tName (map (Qualified extName) (S.toList referencedCols))
@@ -220,24 +227,22 @@ lookupColumnRef thisTable (tableConstraints -> constr) (Qualified extTbl colName
   where
     lookupReference :: TableConstraint -> Alt Maybe (Qualified ColumnName, TableConstraint)
     lookupReference con = Alt $ case con of
-      PrimaryKey _ cols
-        | thisTable == extTbl ->
-          if S.member colName cols then Just (Qualified thisTable colName, con) else Nothing
-      PrimaryKey _ _ -> Nothing
+      PrimaryKey _ colsV
+        | thisTable == extTbl && V.elem colName colsV -> Just (Qualified thisTable colName, con)
+        | otherwise -> Nothing
       ForeignKey _ extTbl' columnPairs _ _ ->
-        let (localCols, referencedCols) = (S.map fst columnPairs, S.map snd columnPairs)
+        let (localCols, referencedCols) = bimap S.fromList S.fromList . unzip $ V.toList columnPairs
          in if
                 | S.member colName localCols && thisTable == extTbl -> Just (Qualified extTbl colName, con)
                 | S.member colName referencedCols && extTbl == extTbl' -> Just (Qualified extTbl colName, con)
                 | otherwise -> Nothing
-      Unique _ cols
-        | thisTable == extTbl ->
-          if S.member colName cols then Just (Qualified thisTable colName, con) else Nothing
-      Unique _ _ -> Nothing
+      Unique _ colsV
+        | thisTable == extTbl && V.elem colName colsV -> Just (Qualified thisTable colName, con)
+        | otherwise -> Nothing
 
 -- | Check that the input 'Column's type matches the input 'EnumerationName'.
 lookupEnum :: (ColumnName, Column) -> Maybe EnumerationName
-lookupEnum (colName, col) =
+lookupEnum (_colName, col) =
   case columnType col of
     PgSpecificType (PgEnumeration eName) -> Just eName
     _ -> Nothing
@@ -297,9 +302,9 @@ validateAddTableConstraint = validateTableConstraint
 validateRemoveTableConstraint :: Schema -> TableName -> TableConstraint -> Either ValidationFailed ()
 validateRemoveTableConstraint s tName c = case c of
   PrimaryKey _ cols ->
-    forM_ (M.toList allOtherTables) (checkIntegrity (map (Qualified tName) . S.toList $ cols))
+    forM_ (M.toList allOtherTables) (checkIntegrity (map (Qualified tName) . V.toList $ cols))
   Unique _ cols ->
-    forM_ (M.toList allOtherTables) (checkIntegrity (map (Qualified tName) . S.toList $ cols))
+    forM_ (M.toList allOtherTables) (checkIntegrity (map (Qualified tName) . V.toList $ cols))
   ForeignKey {} -> Right ()
   where
     allOtherTables :: Tables
@@ -338,11 +343,11 @@ validateRemoveColumnConstraint tbl (Qualified tName colName) = \case
   where
     checkIntegrity :: TableConstraint -> Either ValidationFailed ()
     checkIntegrity constr = case constr of
-      PrimaryKey _ cols ->
-        let reason = ColumnInPrimaryKeyCantBeNull (Qualified tName colName)
-         in if S.member colName cols
-              then Left $ InvalidRemoveColumnConstraint (Qualified tName colName) reason
-              else Right ()
+      PrimaryKey _ cols
+        | V.elem colName cols ->
+            let reason = ColumnInPrimaryKeyCantBeNull (Qualified tName colName)
+             in Left $ InvalidRemoveColumnConstraint (Qualified tName colName) reason
+        | otherwise -> Right ()
       ForeignKey {} -> Right ()
       Unique {} -> Right ()
 

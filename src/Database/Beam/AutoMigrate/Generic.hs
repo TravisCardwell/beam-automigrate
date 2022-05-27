@@ -19,6 +19,7 @@ import qualified Data.Map.Strict as M
 import Data.Proxy
 import qualified Data.Set as S
 import qualified Data.Text as T
+import qualified Data.Vector as V
 import Database.Beam.AutoMigrate.Annotated
 import Database.Beam.AutoMigrate.Compat
 import Database.Beam.AutoMigrate.Types
@@ -161,8 +162,8 @@ mkTableEntryNoFkDiscovery ::
 mkTableEntryNoFkDiscovery annEntity =
   let entity = annEntity ^. deannotate
       tName = entity ^. dbEntityDescriptor . dbEntityName
-      pkColSet = S.fromList $ pkFieldNames entity
-      pks = if S.null pkColSet then mempty else S.singleton (PrimaryKey (tName <> "_pkey") pkColSet)
+      pkCols = V.fromList $ pkFieldNames entity
+      pks = if V.null pkCols then mempty else S.singleton (PrimaryKey (tName <> "_pkey") pkCols)
       (columns, seqs) = gColumns (Proxy @ 'GenSequences) (TableName tName) . from $ dbAnnotatedSchema (annEntity ^. annotatedDescriptor)
       annotatedCons = dbAnnotatedConstraints (annEntity ^. annotatedDescriptor)
    in ((TableName tName, Table (pks <> annotatedCons) columns), seqs)
@@ -353,7 +354,7 @@ instance
           ( ForeignKey
               (T.intercalate "_" (tname : map columnName cnames) <> "_fkey")
               reftname
-              (S.fromList (zip (L.sort cnames) (L.sort refcnames)))
+              (V.fromList (zip (L.sort cnames) (L.sort refcnames)))
               NoAction -- TODO: what should the default be?
               NoAction -- TODO: what should the default be?
           )

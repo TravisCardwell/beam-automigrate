@@ -71,6 +71,7 @@ import Data.Proxy
 import Data.Set (Set)
 import qualified Data.Set as S
 import qualified Data.Text as T
+import qualified Data.Vector as V
 import qualified Database.Beam as Beam
 import Database.Beam.AutoMigrate.Compat
 import Database.Beam.AutoMigrate.Types
@@ -500,7 +501,7 @@ uniqueConstraintOn us =
                       let cols = concatMap (\case (U f) -> colNames (tableSettings e) f) us
                           tName = e ^. dbEntityDescriptor . dbEntityName
                           conname = T.intercalate "_" (tName : map columnName cols) <> "_ukey"
-                       in S.insert (Unique conname (S.fromList cols)) (dbAnnotatedConstraints tbl)
+                       in S.insert (Unique conname (V.fromList cols)) (dbAnnotatedConstraints tbl)
                   }
               )
               e
@@ -546,7 +547,7 @@ foreignKeyOnPk externalEntity ourColumn onDelete onUpdate =
                           tName' = e ^. dbEntityDescriptor . dbEntityName
                           conname = T.intercalate "_" (tName' : map (columnName . fst) colPairs) <> "_fkey"
                        in S.insert
-                            (ForeignKey conname (TableName tName) (S.fromList colPairs) onDelete onUpdate)
+                            (ForeignKey conname (TableName tName) (V.fromList colPairs) onDelete onUpdate)
                             (dbAnnotatedConstraints tbl)
                   }
               )
@@ -589,7 +590,7 @@ nullableForeignKeyOnPk externalEntity ourColumn onDelete onUpdate =
                           tName' = e ^. dbEntityDescriptor . dbEntityName
                           conname = T.intercalate "_" (tName' : map (columnName . fst) colPairs) <> "_fkey"
                        in S.insert
-                            (ForeignKey conname (TableName tName) (S.fromList colPairs) onDelete onUpdate)
+                            (ForeignKey conname (TableName tName) (V.fromList colPairs) onDelete onUpdate)
                             (dbAnnotatedConstraints tbl)
                   }
               )
@@ -634,7 +635,7 @@ foreignKeyOn externalEntity us onDelete onUpdate =
                           tName' = e ^. dbEntityDescriptor . dbEntityName
                           conname = T.intercalate "_" (tName' : map (columnName . fst) colPairs) <> "_fkey"
                        in S.insert
-                            (ForeignKey conname (TableName tName) (S.fromList colPairs) onDelete onUpdate)
+                            (ForeignKey conname (TableName tName) (V.fromList colPairs) onDelete onUpdate)
                             (dbAnnotatedConstraints tbl)
                   }
               )
@@ -679,7 +680,7 @@ nullableForeignKeyOn externalEntity us onDelete onUpdate =
                           tName' = e ^. dbEntityDescriptor . dbEntityName
                           conname = T.intercalate "_" (tName' : map (columnName . fst) colPairs) <> "_fkey"
                        in S.insert
-                            (ForeignKey conname (TableName tName) (S.fromList colPairs) onDelete onUpdate)
+                            (ForeignKey conname (TableName tName) (V.fromList colPairs) onDelete onUpdate)
                             (dbAnnotatedConstraints tbl)
                   }
               )

@@ -457,12 +457,12 @@ getAllConstraints conn = do
       AllTableConstraints
     addFkConstraint actions st SqlForeignConstraint {..} = flip execState st $ do
       let currentTable = sqlFk_foreign_table
-      let columnSet = S.fromList $ zip (V.toList sqlFk_fk_columns) (V.toList sqlFk_pk_columns)
+      let columnPairs = V.zip sqlFk_fk_columns sqlFk_pk_columns
       let (onDelete, onUpdate) =
             case M.lookup sqlFk_name (getActions actions) of
               Nothing -> (NoAction, NoAction)
               Just a -> (actionOnDelete a, actionOnUpdate a)
-      addTableConstraint currentTable (ForeignKey sqlFk_name sqlFk_primary_table columnSet onDelete onUpdate)
+      addTableConstraint currentTable (ForeignKey sqlFk_name sqlFk_primary_table columnPairs onDelete onUpdate)
 
     addOtherConstraint ::
       AllTableConstraints ->
@@ -470,11 +470,11 @@ getAllConstraints conn = do
       AllTableConstraints
     addOtherConstraint st SqlOtherConstraint {..} = flip execState st $ do
       let currentTable = sqlCon_table
-      let columnSet = S.fromList . V.toList $ sqlCon_fk_colums
+      let columns = sqlCon_fk_colums
       case sqlCon_constraint_type of
-        SQL_raw_unique -> addTableConstraint currentTable (Unique sqlCon_name columnSet)
-        SQL_raw_pk -> if S.null columnSet then pure () else
-          addTableConstraint currentTable (PrimaryKey sqlCon_name columnSet)
+        SQL_raw_unique -> addTableConstraint currentTable (Unique sqlCon_name columns)
+        SQL_raw_pk -> if V.null columns then pure () else
+          addTableConstraint currentTable (PrimaryKey sqlCon_name columns)
 
 newtype ReferenceActions = ReferenceActions {getActions :: Map Text Actions}
 

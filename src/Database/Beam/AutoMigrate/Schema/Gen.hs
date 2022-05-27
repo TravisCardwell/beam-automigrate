@@ -27,6 +27,7 @@ import qualified Data.Set as S
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Time (Day, LocalTime, TimeOfDay)
+import qualified Data.Vector as V
 import Data.Word
 import Database.Beam.AutoMigrate (HasColumnType, defaultColumnType, sqlSingleQuoted)
 import Database.Beam.AutoMigrate.Annotated (pgDefaultConstraint)
@@ -84,7 +85,7 @@ genUniqueConstraint allCols = do
     [] -> pure mempty
     _ -> do
       constraintName <- runIdentity <$> genName Identity
-      pure $ S.singleton $ Unique (constraintName <> "_unique") (S.fromList someCols)
+      pure $ S.singleton $ Unique (constraintName <> "_unique") (V.fromList someCols)
 
 isStdType :: (ColumnName, Column) -> Bool
 isStdType (_, columnType -> SqlStdType _) = True
@@ -102,7 +103,7 @@ genPkConstraint allCols = do
     [] -> pure mempty
     _ -> do
       constraintName <- runIdentity <$> genName Identity
-      pure $ S.singleton $ PrimaryKey (constraintName <> "_pk") (S.fromList $ map fst someCols)
+      pure $ S.singleton $ PrimaryKey (constraintName <> "_pk") (V.fromList $ map fst someCols)
   where
     notNull :: (ColumnName, Column) -> Bool
     notNull (_, col) = NotNull `S.member` columnConstraints col
@@ -471,9 +472,9 @@ deleteConstraintReferencing cName conss = S.filter (not . doesReference) conss
   where
     doesReference :: TableConstraint -> Bool
     doesReference = \case
-      PrimaryKey _ refs -> S.member cName refs
-      ForeignKey _ _ refs _ _ -> let ours = S.map snd refs in S.member cName ours
-      Unique _ refs -> S.member cName refs
+      PrimaryKey _ refs -> V.elem cName refs
+      ForeignKey _ _ refs _ _ -> maybe False (pure True) $ V.find ((== cName) . snd) refs
+      Unique _ refs -> V.elem cName refs
 
 similarColumn :: Column -> Gen Column
 similarColumn col = do

@@ -18,6 +18,7 @@ import Data.String.Conv (toS)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Typeable
+import qualified Data.Vector as V
 import Database.Beam.Backend.SQL (BeamSqlBackendSyntax)
 import qualified Database.Beam.Backend.SQL.AST as AST
 import Database.Beam.Postgres (Pg, Postgres)
@@ -182,12 +183,12 @@ type ConstraintName = Text
 
 data TableConstraint
   = -- | This set of 'Column's identifies the Table's 'PrimaryKey'.
-    PrimaryKey ConstraintName (Set ColumnName)
+    PrimaryKey ConstraintName (V.Vector ColumnName)
   | -- | This set of 'Column's identifies a Table's 'ForeignKey'. This is usually found in the 'tableConstraints'
     -- of the table where the foreign key is actually defined (in terms of 'REFERENCES').
     -- The set stores a (fk_column, pk_column) correspondence.
-    ForeignKey ConstraintName TableName (Set (ColumnName, ColumnName)) ReferenceAction {- onDelete -} ReferenceAction {- onUpdate -}
-  | Unique ConstraintName (Set ColumnName)
+    ForeignKey ConstraintName TableName (V.Vector (ColumnName, ColumnName)) ReferenceAction {- onDelete -} ReferenceAction {- onUpdate -}
+  | Unique ConstraintName (V.Vector ColumnName)
   deriving (Show, Eq, Ord, Generic)
 
 instance NFData TableConstraint
