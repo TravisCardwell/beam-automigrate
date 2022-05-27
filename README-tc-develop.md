@@ -45,7 +45,9 @@ No migration is required.
 * **Severity**: Critical (prevents modeling real-world databases)
 * **Compatibility**: Breaking
 * **Status**: Pending
-* **Commit**: [`2f197aab`](https://github.com/TravisCardwell/beam-automigrate/commit/2f197aab5f3fabee9646410b77eb923ff0bfbc89)
+* **Commits**:
+    * [`2f197aab`](https://github.com/TravisCardwell/beam-automigrate/commit/2f197aab5f3fabee9646410b77eb923ff0bfbc89)
+    * [`58df62d8`](https://github.com/TravisCardwell/beam-automigrate/commit/58df62d86af30862258e35bca32e5ad832d9432d)
 * **Issue**: [#38](https://github.com/obsidiansystems/beam-automigrate/issues/38)
 * **Pull request**: [#39](https://github.com/obsidiansystems/beam-automigrate/pull/39)
 
@@ -57,6 +59,11 @@ and columns of the *referenced* unique constraint.  The name is not
 necessarily unique because many tables may have foreign key constraints that
 reference the same unique constraint.  The constraint name clashes prevent
 `beam-automigrate` from being able to model non-trivial databases.
+
+When automatic foreign key discovery is used, constraint names are already
+based on the table and columns of the foreign key constraint, but only the
+first column is taken into account.  Constraint names are not unique in cases
+where more than more than one constraint have the same first column.
 
 ### Solution
 
@@ -72,11 +79,8 @@ provide an additional function that allows the developer to specify the
 constraint name.  (With "is-a" relationships, one normally creates a hierarchy
 of foreign key constraints, so there are no constraints on the same columns.)
 
-Note that this solution does not fix the `GTableConstraintColumns` instance
-that is used in the implementation of automatic foreign key discovery and has
-multiple issues.  I planned on working on this separately, but perhaps I
-should look into it now...  (Due to many issues, I currently completely
-disable automatic foreign key discovery.)
+The `GTableConstraintColumns` instance is changed so that the constraint name
+includes all of the constraint columns.
 
 ### Migration
 
