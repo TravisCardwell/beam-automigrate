@@ -63,6 +63,10 @@ pkFieldNames entity =
 fieldAsColumnNames :: Beamable tbl => tbl (Beam.TableField c) -> [ColumnName]
 fieldAsColumnNames field = map ColumnName (allBeamValues (\(Columnar' x) -> x ^. fieldName) field)
 
+-- | Similar to 'fieldAsColumnNames', but it works on 'Beam.Nullable' columns.
+nullableFieldAsColumnNames :: Beamable tbl => tbl (Beam.Nullable (Beam.TableField c)) -> [ColumnName]
+nullableFieldAsColumnNames field = map ColumnName (allBeamValues (\(Columnar' x) -> x ^. fieldName) field)
+
 -- | Returns /all/ the 'ColumnName's for a given 'DatabaseEntity'.
 allColumnNames :: Beamable tbl => Beam.DatabaseEntity be db (TableEntity tbl) -> [ColumnName]
 allColumnNames entity =

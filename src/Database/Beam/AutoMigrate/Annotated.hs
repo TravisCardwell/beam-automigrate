@@ -45,9 +45,12 @@ module Database.Beam.AutoMigrate.Annotated
     uniqueConstraintOn,
 
     -- ** Foreign key constraint
-    ForeignKeyConstraint (..),
     foreignKeyOnPk,
+    nullableForeignKeyOnPk,
+    ForeignKeyConstraint (..),
     foreignKeyOn,
+    NullableForeignKeyConstraint (..),
+    nullableForeignKeyOn,
 
     -- * Other types and functions
     TableKind,
@@ -508,13 +511,6 @@ uniqueConstraintOn us =
 -- Specifying FK constrainst
 --
 
-data ForeignKeyConstraint (tbl :: ((* -> *) -> *)) (tbl' :: ((* -> *) -> *)) where
-  References ::
-    Beam.Beamable (PrimaryKey tbl') =>
-    (tbl (Beam.TableField tbl) -> PrimaryKey tbl' (Beam.TableField tbl)) ->
-    (tbl' (Beam.TableField tbl') -> Beam.Columnar Beam.Identity (Beam.TableField tbl' ty)) ->
-    ForeignKeyConstraint tbl tbl'
-
 -- | Special-case combinator to use when defining FK constraints referencing the /primary key/ of the
 -- target table.
 foreignKeyOnPk ::
@@ -558,6 +554,56 @@ foreignKeyOnPk externalEntity ourColumn onDelete onUpdate =
         )
     )
 
+-- | Special-case combinator to use when defining FK constraints on /nullable/
+-- references to the /primary key/ of the target table.
+nullableForeignKeyOnPk ::
+  ( Beam.Beamable tbl',
+    Beam.Beamable (PrimaryKey tbl'),
+    Beam.Table tbl',
+    PrimaryKey tbl' f ~ PrimaryKey tbl' g
+  ) =>
+  -- | The 'DatabaseEntity' of the /referenced/ table.
+  DatabaseEntity be db (TableEntity tbl') ->
+  -- | A function yielding a 'PrimaryKey'. This is usually a record field of the table
+  -- you want to define the FK /for/, and it must have /PrimaryKey externalTable
+  -- (Nullable f)/ as its column-tag.
+  (tbl (Beam.TableField tbl) -> PrimaryKey tbl' (Beam.Nullable (Beam.TableField tbl))) ->
+  -- | What do to \"on delete\"
+  ReferenceAction ->
+  -- | What do to \"on update\"
+  ReferenceAction ->
+  EntityModification (AnnotatedDatabaseEntity be db) be (TableEntity tbl)
+nullableForeignKeyOnPk externalEntity ourColumn onDelete onUpdate =
+  EntityModification
+    ( Endo
+        ( \(AnnotatedDatabaseEntity tbl@(AnnotatedDatabaseTable {}) e) ->
+            AnnotatedDatabaseEntity
+              ( tbl
+                  { dbAnnotatedConstraints =
+                      let colPairs =
+                            zipWith
+                              (,)
+                              (nullableFieldAsColumnNames (ourColumn (tableSettings e)))
+                              (fieldAsColumnNames (Beam.pk (tableSettings externalEntity)))
+                          tName = externalEntity ^. dbEntityDescriptor . dbEntityName
+                          tName' = e ^. dbEntityDescriptor . dbEntityName
+                          conname = T.intercalate "_" (tName' : map (columnName . fst) colPairs) <> "_fkey"
+                       in S.insert
+                            (ForeignKey conname (TableName tName) (S.fromList colPairs) onDelete onUpdate)
+                            (dbAnnotatedConstraints tbl)
+                  }
+              )
+              e
+        )
+    )
+
+data ForeignKeyConstraint (tbl :: ((* -> *) -> *)) (tbl' :: ((* -> *) -> *)) where
+  References ::
+    Beam.Beamable (PrimaryKey tbl') =>
+    (tbl (Beam.TableField tbl) -> PrimaryKey tbl' (Beam.TableField tbl)) ->
+    (tbl' (Beam.TableField tbl') -> Beam.Columnar Beam.Identity (Beam.TableField tbl' ty)) ->
+    ForeignKeyConstraint tbl tbl'
+
 foreignKeyOn ::
   Beam.Beamable tbl' =>
   DatabaseEntity be db (TableEntity tbl') ->
@@ -581,6 +627,51 @@ foreignKeyOn externalEntity us onDelete onUpdate =
                                     zipWith
                                       (,)
                                       (fieldAsColumnNames (ours (tableSettings e)))
+                                      [ColumnName (theirs (tableSettings externalEntity) ^. Beam.fieldName)]
+                              )
+                              us
+                          tName = externalEntity ^. dbEntityDescriptor . dbEntityName
+                          tName' = e ^. dbEntityDescriptor . dbEntityName
+                          conname = T.intercalate "_" (tName' : map (columnName . fst) colPairs) <> "_fkey"
+                       in S.insert
+                            (ForeignKey conname (TableName tName) (S.fromList colPairs) onDelete onUpdate)
+                            (dbAnnotatedConstraints tbl)
+                  }
+              )
+              e
+        )
+    )
+
+data NullableForeignKeyConstraint (tbl :: ((* -> *) -> *)) (tbl' :: ((* -> *) -> *)) where
+  ReferencesN ::
+    Beam.Beamable (PrimaryKey tbl') =>
+    (tbl (Beam.TableField tbl) -> PrimaryKey tbl' (Beam.Nullable (Beam.TableField tbl))) ->
+    (tbl' (Beam.TableField tbl') -> Beam.Columnar Beam.Identity (Beam.TableField tbl' ty)) ->
+    NullableForeignKeyConstraint tbl tbl'
+
+nullableForeignKeyOn ::
+  Beam.Beamable tbl' =>
+  DatabaseEntity be db (TableEntity tbl') ->
+  [NullableForeignKeyConstraint tbl tbl'] ->
+  -- | On Delete
+  ReferenceAction ->
+  -- | On Update
+  ReferenceAction ->
+  EntityModification (AnnotatedDatabaseEntity be db) be (TableEntity tbl)
+nullableForeignKeyOn externalEntity us onDelete onUpdate =
+  EntityModification
+    ( Endo
+        ( \(AnnotatedDatabaseEntity tbl@(AnnotatedDatabaseTable {}) e) ->
+            AnnotatedDatabaseEntity
+              ( tbl
+                  { dbAnnotatedConstraints =
+                      let colPairs =
+                            concatMap
+                              ( \case
+                                  (ReferencesN ours theirs) ->
+                                    zipWith
+                                      (,)
+                                      (nullableFieldAsColumnNames (ours (tableSettings e)))
                                       [ColumnName (theirs (tableSettings externalEntity) ^. Beam.fieldName)]
                               )
                               us
