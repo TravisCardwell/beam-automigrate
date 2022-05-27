@@ -124,3 +124,59 @@ I implemented new functions `nullableForeignKeyOnPk` and
 ### Migration
 
 No migration is required.
+
+## Constraint columns not ordered
+
+* **Severity**: Critical (causes incorrect indexes)
+* **Compatibility**: Breaking
+* **Status**: Pending
+* **Commit**: [`352d2a84`](https://github.com/TravisCardwell/beam-automigrate/commit/352d2a84e5a8c077db5a9f7bc64f984bcc7e8ee6)
+* **Issue**: [#41](https://github.com/obsidiansystems/beam-automigrate/issues/41)
+* **Pull request**: Pending
+
+### Problem
+
+Currently, `TableConstrint` columns are stored using `Set`, so the order is
+determined by `Set.toList`.
+
+```haskell
+data TableConstraint
+  = PrimaryKey ConstraintName (Set ColumnName)
+  | ForeignKey ConstraintName TableName (Set (ColumnName, ColumnName)) ReferenceAction {- onDelete -} ReferenceAction {- onUpdate -}
+  | Unique ConstraintName (Set ColumnName)
+  deriving (Show, Eq, Ord, Generic)
+```
+
+This is a **critical** issue for `PrimaryKey` and `Unique` constraints because
+these constraints create indexes, for which column order is *very* important.
+For example, a primary key `PRIMARY KEY (a, b, c)` creates a unique index that
+behaves like Haskell type `Map A (Map B (Map C Value))`.  Due to the use of
+`Set`, the columns may be out of order.  In my project, I saw primary keys in
+reverse order, equivalent to Haskell type `Map C (Map B (Map A Value))`.  A
+query to select all values for a given `A` and `B` performs well with the
+correct primary key order, but it performs terribly with the incorrect primary
+key order.
+
+The use of `Set` for `ForeignKey` constraints does not result in incorrect
+constraints because `PostgreSQL` supports foreign key constraints with columns
+in any order.  It is best practice to put the columns in natural order,
+however, so use of `Set` results in inelegant constraints in the schema.
+
+### Solution
+
+To fix this issue, I changed all of the `TableConstraint` constructors to use
+`Vector` instead of `Set` to store the column information.  With ordered
+columns, primary key and unique constraints are correct, and foreign key
+constraints maintain elegant column order.
+
+### Migration
+
+The order of columns in constraints that have more than one column *may*
+change (depending on how the column names are ordered by `Set.toList`).
+
+The indexes for any composite primary keys or multi-column unique constraints
+for which the order is different are *broken* and must be rebuilt.  Changes
+to the order of columns in foreign key constraints are not as important, but
+neither are they costly.  Migration is done by dropping the invalid constraint
+and then adding the correct constraint.  This migration should be computed
+automatically.
